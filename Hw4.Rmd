@@ -1,0 +1,138 @@
+---
+title: "Hw4"
+author: "Trevor Freeland"
+date: "April 13, 2018"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = F, warning = F, comment = NA)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(plyr)
+library(lme4)
+```
+
+##31
+
+```{r, eval=FALSE}
+set.seed(1534)
+X <- rep(1:10, 6)
+Group <- factor(rep(LETTERS[1:6], each=10))
+N <- 10^3 #number of times to run simulation
+se <- se2 <- seInt <- seInt2 <- numeric(N)
+sigma <- 4
+sigmab <- 1
+for (i in 1:N){
+epsilon <- rnorm(60,0,sigma) #individual errors
+u <- rnorm(6,0, sigmab) #random effects for each group
+w <- rep(u, each = 10) #replicate for 10 measurements/group
+Y <- 3 + 10*X + epsilon + w
+Y.lm <- lm(Y ~ X)
+se[i] <- summary(Y.lm)$sigma
+seInt[i] <- sqrt(vcov(Y.lm)[1,1]) #se of fixed effect, intercept
+Y.lmer <- lmer(Y ~ X + (1|Group))
+se2[i]<- summary(Y.lmer)$sigma
+seInt2[i] <-sqrt(vcov(Y.lmer)[1,1]) #se of fixed effect, intercept
+}
+mean(se)
+
+mean(se2)
+mean(seInt)
+mean(seInt2)
+plot(density(seInt)) #you may have to change ylim
+lines(density(seInt2), lty=2)
+```
+
+##32
+
+```{r}
+Schools <- read.csv("http://math.carleton.edu/Chihara/Stats345/Schools.csv")
+MathScores <- read.csv("http://math.carleton.edu/Chihara/Stats345/MathScores.csv")
+Combined <- merge(Schools, MathScores, by.x = "School")
+```
+
+```{r}
+ggplot(Combined, aes(x = Gender, y = Math)) + geom_boxplot()
+```
+
+```{r}
+ggplot(Combined, aes(x = Minority, y = Math)) + geom_boxplot()
+```
+
+```{r}
+ggplot(Combined, aes(x = Size, y = Math)) + geom_boxplot()
+```
+
+##33
+
+###(a)
+
+
+###(b)
+
+##34
+
+###(a)
+
+###(b)
+
+###(c)
+
+###(d)
+
+###(e)
+
+##35
+
+###(a)
+
+###(b)
+
+##36
+
+###(a)
+
+###(b)
+
+###(c)
+
+##37
+
+###(a)
+
+###(b)
+
+###(c)
+
+###(d)
+
+##38
+
+###(a)
+
+###(b)
+
+##39
+
+###(a)
+
+###(a)
+
+##40
+
+###(a)
+
+###(b)
+
+##41
+
+###(1)
+
+###(2)
+
+###(3)
