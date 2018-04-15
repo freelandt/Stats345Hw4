@@ -65,7 +65,7 @@ ggplot(Combined, aes(x = Minority, y = Math)) + geom_boxplot()
 ```
 
 ```{r}
-ggplot(Combined, aes(x = Size, y = Math)) + geom_boxplot()
+ggplot(Combined, aes(x = Type, y = Size)) + geom_boxplot()
 ```
 
 ##33
