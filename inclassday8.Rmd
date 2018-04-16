@@ -1,0 +1,94 @@
+---
+title: "aef"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(lme4)
+library(dplyr)
+orthodont <- read.csv("http://math.carleton.edu/Chihara/Stats345/Orthodont.csv")
+orthof <- filter(orthodont, sex == "Female")
+orth.lmer <- lmer(distance~age + (1|subject), data = orthof)
+orth.lmer2 <- lmer(distance~age + (age|subject), data = orthof)
+
+d<- 2*(logLik(orth.lmer2) - logLik(orth.lmer))
+N <- 10^3
+Dsim <- numeric(N)
+nullY <- simulate(orth.lmer, nsim=N)
+nullY[1:5, 1:5]
+
+for (i in 1:N){
+  null.lmer <- refit(orth.lmer, nullY[,i])
+  alt.lmer <- refit(orth.lmer2, nullY[,i])
+  Dsim[i] <- 2*(logLik(alt.lmer) - logLik(null.lmer))
+  
+}
+hist(Dsim)
+abline(v=d)
+mean(Dsim>d)
+
+orth.lm <- lm(distance~age, data = orthof)
+D <- 2*(logLik(orth.lmer)-logLik(orth.lm,REML=TRUE))
+N <- 10^20
+Dsim <- numeric(10^9)
+nullY <- simulate(orth.lm, nsim=N)
+
+for (i in 1:N){
+  null.lmer <- lm(nullY[,i]~distance, data = orthof)
+  alt.lmer <- refit(orth.lmer2, nullY[,i])
+  Dsim[i] <- 2*(logLik(alt.lmer) - logLik(null.lmer))
+}
+hist(Dsim)
+abline(v=D)
+mean(Dsim>D)
+```
+
+
+```{r}
+musicians <- read.csv("http://math.carleton.edu/Chihara/Stats345/Musicians.csv")
+musicdiary <- read.csv("http://math.carleton.edu/Chihara/Stats345/MusicDiary.csv")
+music <- merge(musicians, musicdiary, by.x = "id")  
+music$Memory2 <- ifelse(music$memory == "Memory", 1, 0)
+fit.lmer3 <- lmer(na~Orch*(Large + Memory2) + (Large + Memory2|id),data=music)
+fit.lmer4 <- update(fit.lmer3, .~. - (Large+Memory2|id) + (1|id))
+
+D <- 2*(logLik(fit.lmer3)-logLik(fit.lmer4))
+N <- 500
+Dsim <- numeric(N)
+nullY <- simulate(fit.lmer4, nsim=N)
+
+for (i in 1:N){
+  null.lmer <- refit(fit.lmer4, nullY[,i])
+  alt.lmer <- refit(fit.lmer3, nullY[,i])
+  Dsim[i] <- 2*(logLik(alt.lmer) - logLik(null.lmer))
+}
+hist(Dsim)
+abline(v=D)
+mean(Dsim>D)
+
+fit.lmer5 <- update(fit.lmer4, .~. -Orch:Large - Orch:Memory2, REML=FALSE)
+fit.lmer4ML <- update(fit.lmer4, REML=FALSE)
+D <- 2*(logLik(fit.lmer4ML)-logLik(fit.lmer5))
+1-pchisq(D,2)
+anova(fit.lmer5, fit.lmer4ML)
+```
+
+```{r}
+library(HLMdiag)
+x <- HLMresid(orth.lmer2, level="marginal",standardize=TRUE)
+plot(x~age,data=orthof)
+abline(h=0)
+plot(x)
+x2 <- HLMresid(orth.lmer2, level = 1, standardize = TRUE)
+plot(fitted(orth.lmer2), x2)
+cd <- cooks.distance(orth.lmer2)
+plot(cd,type="h")
+dotplot_diag(cd,cutoff="internal", name="cooks.distance")
+
+lev <- leverage(orth.lmer2,level=1)
+dotplot_diag(lev[,1],cutoff="internal",name="leverage")
+```

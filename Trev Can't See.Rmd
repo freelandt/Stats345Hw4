@@ -1,0 +1,120 @@
+---
+title: "Trev Is Blind"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+charter_wide <- read.csv("http://math.carleton.edu/Chihara/Stats345/Charter_wide.csv")
+any(is.na(charter_wide))
+
+library(tidyverse)
+library(plyr)
+library(lme4)
+
+temp.df <- gather(charter_wide, key = time, value = score, -c(1:2, 6:10))
+temp.df$year <- as.numeric(mapvalues(temp.df$time, c("MathAveScore0", "MathAveScore1", "MathAveScore2"), 0:2))
+
+temp.df$urban2 <- as.factor(ifelse(temp.df$urban==0, "rural", "urban"))
+temp.df$charter2 <- as.factor(ifelse(temp.df$charter==0, "not-charter", "charter"))
+
+charter <- arrange(temp.df, charter2, schoolName)
+```
+
+```{r}
+p <- ggplot(charter)
+p + geom_histogram(aes(x = score))+facet_grid(year~.)
+p + geom_boxplot(aes(x=charter2, y=score))+facet_grid(year~.)
+```
+
+```{r}
+index2 <- sample(74:618, 73, replace = FALSE)
+id <- charter_wide$schoolid[c(1:73, index2)]
+index3 <- is.element(charter$schoolid, id)
+
+chartersample <- charter[index3,]
+
+p2 <- ggplot(chartersample, aes(x=year, y=score, color=schoolid))
+p2+geom_line()+theme(legend.position = "none")+stat_smooth(method = "loess", se = FALSE)+facet_grid(~charter2)
+p2+geom_line()+theme(legend.position = "none")+stat_smooth(method = "lm", se = FALSE)+facet_grid(~charter2)
+```
+
+```{r}
+cor(charter_wide[,3:5], use="complete.obs")
+ch.lm <- lm(score~year, data=charter)
+resid(ch.lm)[1:12]
+resid.mat <- matrix(resid(ch.lm), ncol=3, byrow=T, dimnames=list(NULL, c("resid0", "resid1", "resid2")))
+
+cor(resid.mat, use="pairwise.complete.obs")
+ggplot(as.data.frame(resid.mat), aes(x=resid0, y=resid1))+geom_point()
+```
+
+```{r}
+library(mice)
+md.pattern(charter_wide)
+
+ch.lmer <- lmer(score~1+(1|schoolid), data=charter)
+summary(ch.lmer)
+
+ch.lmer2 <- lmer(score~year+(year|schoolid), data = charter)
+summary(ch.lmer2)
+
+ch.lmer2b <- lmer(score~year+(1|schoolid), data=charter)
+l1 <- logLik(ch.lmer2)
+l0 <- logLik(ch.lmer2b)
+d <- 2*(l1-l0)
+.5*(1-pchisq(d,2))+.5*(1-pchisq(d,1))
+
+ch.lmer3 <- lmer(score~year*(urban+charter+sped+freelunch+nonwhite)+(year|schoolid), data=charter, REML=FALSE)
+summary(ch.lmer3, cor=FALSE)
+
+ch.lmer4 <- lmer(score~year*(charter+urban)+(year|schoolid), data=charter, REML=FALSE)
+anova(ch.lmer4, ch.lmer3)
+summary(ch.lmer4, cor=FALSE)
+
+ch.lmer5 <- update(ch.lmer4,.~.-year:urban)
+summary(ch.lmer5, cor=FALSE)
+```
+
+```{r}
+library(HLMdiag)
+x <- HLMresid(ch.lmer4, standardize = TRUE, level = 1)
+plot(fitted(ch.lmer4),x,ylab="residuals")
+
+w <- HLMresid(ch.lmer4, standardize = TRUE, level = "marginal")
+plot(fitted(ch.lmer4), w, ylab = "marginal resids")
+
+index <- complete.cases(charter)
+plot(charter$freelunch[index], w)
+plot(charter$sped[index],w)
+plot(charter$nonwhite[index],w)
+
+cd <- cooks.distance(ch.lmer4)
+plot(cd, type = "h")
+dotplot_diag(cd, cutoff="internal", name="cooks.distance")
+
+index <- which(cd > .01)
+charter[index,]
+
+ch.lmer4b <- update(ch.lmer4, subset = -index)
+summary(ch.lmer4b, cor=FALSE)
+summary(ch.lmer4, cor=FALSE)
+
+lev <- leverage(ch.lmer4, level = 1)
+dotplot_diag(lev[,1], cutoff = "internal", name="leverage")
+
+index <- which(lev[,1] > .5)
+charter[index,]
+ch.lmer4c <- update(ch.lmer4, subset = -index)
+summary(ch.lmer4c, cor=FALSE)
+summary(ch.lmer4, cor=FALSE)
+```
+
+
+
+
+
+

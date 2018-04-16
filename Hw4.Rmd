@@ -2,11 +2,11 @@
 title: "Hw4"
 author: "Trevor Freeland"
 date: "April 13, 2018"
-output: github_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = F, warning = F, comment = NA)
+knitr::opts_chunk$set(echo = FALSE, message = F, warning = F, comment = NA, fig.height = 4)
 ```
 
 ```{r}
@@ -15,40 +15,46 @@ library(dplyr)
 library(tidyr)
 library(plyr)
 library(lme4)
+library(pander)
 ```
 
 ##31
+
+After running the simulations multiple times with different $\sigma$ and $\sigma_b$ values it is clear that there is a significant difference between the 3 different P-values. The half and half p-value always lies in between the two full values. While the p-value from the $\chi_q^2$ gives on average smaller p-values, and the $\chi_{q+1}^2$ gives on average larger p-values. This simulation backs up the concepts that we talked about in class that the combination of both of the distributions seem to be the best fit for doing this kind of simulation testing.
 
 ```{r, eval=FALSE}
 set.seed(1534)
 X <- rep(1:10, 6)
 Group <- factor(rep(LETTERS[1:6], each=10))
-N <- 10^3 #number of times to run simulation
-se <- se2 <- seInt <- seInt2 <- numeric(N)
-sigma <- 4
-sigmab <- 1
+N <- 500 #number of times to run simulation
+sigma <- 10
+sigmab <- 4
+P1 <- numeric(N)
+P2 <- numeric(N)
+P3 <- numeric(N)
+
 for (i in 1:N){
 epsilon <- rnorm(60,0,sigma) #individual errors
 u <- rnorm(6,0, sigmab) #random effects for each group
 w <- rep(u, each = 10) #replicate for 10 measurements/group
-Y <- 3 + 10*X + epsilon + w
-Y.lm <- lm(Y ~ X)
-se[i] <- summary(Y.lm)$sigma
-seInt[i] <- sqrt(vcov(Y.lm)[1,1]) #se of fixed effect, intercept
+Y <- 3 + 10*X  + epsilon + w
 Y.lmer <- lmer(Y ~ X + (1|Group))
-se2[i]<- summary(Y.lmer)$sigma
-seInt2[i] <-sqrt(vcov(Y.lmer)[1,1]) #se of fixed effect, intercept
+Y.full <- lmer(Y ~ X + (X|Group))
+D <- 2*(logLik(Y.full) - logLik(Y.lmer))
+P1[i] <- .5*(1-pchisq(D,2))+.5*(1-pchisq(D,1)) 
+P2[i] <- 1-pchisq(D,1)
+P3[i] <- 1-pchisq(D,2)
 }
-mean(se)
 
-mean(se2)
-mean(seInt)
-mean(seInt2)
-plot(density(seInt)) #you may have to change ylim
-lines(density(seInt2), lty=2)
+mean(P1)
+mean(P2)
+mean(P3)
+
 ```
 
 ##32
+
+Below I have some exploratoy plots and a table with some summary statistics of the data. Through my initial exploratory analysis It appears that Gender may play a small role in the Math scores, it looks like Males on average have about a point or two higher than the the average Female. Whether or not the student was a minority seemed to have a larger effect on the Math scores, with non-minorities averaging about 5 points higher than the average student who is a minority. When looking at some of the School variables I noticed that the Type of school seems to be related to size of the school, with Catholic schools being smaller on average than public schools. 
 
 ```{r}
 Schools <- read.csv("http://math.carleton.edu/Chihara/Stats345/Schools.csv")
@@ -68,71 +74,372 @@ ggplot(Combined, aes(x = Minority, y = Math)) + geom_boxplot()
 ggplot(Combined, aes(x = Type, y = Size)) + geom_boxplot()
 ```
 
+```{r}
+SchoolSummary <- Schools %>% summarize(Ave.Size = mean(Size), Ave.Academic = mean(Academic), Ave.AveSES = mean(AveSES))
+MathSummary <- MathScores %>% summarize(Ave.Math = mean(Math), Ave.SES = mean(SES))
+SummaryStats <- merge(SchoolSummary, MathSummary)
+pander(SummaryStats)
+```
+
+
 ##33
 
 ###(a)
 
+The anova command on the model indicates that the school variable is definitely significant. The anova command gives us a p-value of essentially 0. This all implies that which school students are at definitely has an effect on their Math Scores, which indicates we might need to use a random effects model. 
+
+```{r}
+MathScores$School <- as.factor(MathScores$School)
+Combined$School <- as.factor(Combined$School)
+math.lm1 <- lm(Math~Gender + Minority + SES + School,data = MathScores)
+sigma <- summary(math.lm1)$sigma
+df <- summary(math.lm1)$df
+#anova(math.lm1)
+```
 
 ###(b)
+
+We get a intraclass corralation of about 20%. This indicates that there is a decent of relationship between students who are all in the same school, again signifying that we might need to use the random effects model. 
+
+```{r}
+math.lme <- lmer(Math~(1|School), data = Combined)
+#summary(math.lme)
+corr <- 8.614/(8.614+39.148)
+```
 
 ##34
 
 ###(a)
 
+Level 1: $Y_{ij} = a_i + b_i(Male) + c_i(SES) + d_i(MinorityYes) + \epsilon_{ij}$
+
+Level 2: $a_i = \alpha_0  + \alpha_2(Size) + \alpha_3(Type) + \alpha_4(Academic) + \alpha_5(AveSES) + \mu_i$
+
+$b_i = \beta_0 + w_i$ 
+
+$c_i = \gamma_0 + v_i$
+
+$d_i = \phi_0 + p_i$
+
+Composite Form
+
+$$Y_{ij} = \alpha_0  + \alpha_2(Size) + \alpha_3(Type) + \alpha_4(Academic) + \alpha_5(AveSES) + \beta_0(Male) + \gamma_0(SES) + \phi_0(MinorityYes) + w_i(Male) + v_i(SES) + p_i(Minority) + \mu_i + \epsilon_{ij}$$
+
 ###(b)
+
+The model gives us a warning saying that some predictor variables are on very different scales, consider rescaling and we get a model failed to converge: degenerate Hessian with 3 negative eigenvalues warning.
+
+```{r}
+math.lme2 <- lmer(Math~(Size + Type + Academic + AveSES + Gender + SES + Minority) + (Gender + SES + Minority|School), data = Combined)
+#summary(math.lme2)
+```
 
 ###(c)
 
+The range of the numeric variables are very small expect for the range of the size of the schools, which is incredibly large when compared to the other ones. See table below for the specific ranges. 
+
+```{r}
+SizeStats <- Combined %>% summarize(Min = min(Size), Max = max(Size), Range = Max - Min)
+AcademicStats <- Combined %>% summarize(Min = min(Academic), Max = max(Academic), Range = Max - Min)
+AveSESStats <- Combined %>% summarize(Min = min(AveSES), Max = max(AveSES), Range = Max - Min)
+SESStats <- Combined %>% summarize(Min = min(SES), Max = max(SES), Range = Max - Min)
+total <- rbind(SizeStats, AcademicStats, AveSESStats, SESStats)
+row.names(total) <- c("Size","Academic","AveSES", "SES")
+total
+```
+
 ###(d)
 
+Using the given code in the assignment we rescaled the Size variable. 
+
+```{r, results='hide'}
+sizeScaled <- scale(Combined$Size) #assuming size is column 6.
+mean(sizeScaled)
+sd(sizeScaled)
+data.class(sizeScaled)
+Combined <- cbind(Combined, sizeScaled) #append data
+```
+
 ###(e)
+
+After rerunning our model with the scaled version of size it does appear to have resolved the problem since we no longer got the warning about the predictor variables being on very different scales but we still get a warning about Hessian with 1 negative eigenvalues.
+
+```{r}
+math.lme3 <- lmer(Math~(sizeScaled + Type + Academic + AveSES + Gender + SES + Minority) + (Gender + SES + Minority|School), data = Combined)
+#summary(math.lme3)
+```
 
 ##35
 
 ###(a)
 
+Our simulation gave a p-value of .15, indicating that we should keep the reduced model and we won't lose significant information. So we will go with the model that only has the Minority random slope.
+
+```{r, include=F, eval=F}
+set.seed(546378)
+math.lme4 <- lmer(Math~(sizeScaled + Type + Academic + AveSES + Gender + SES + Minority) + (Minority|School), data = Combined)
+
+d<- 2*(logLik(math.lme3) - logLik(math.lme4))
+N <- 100
+Dsim <- numeric(N)
+nullY <- simulate(math.lme4, nsim=N)
+nullY[1:5, 1:5]
+
+for (i in 1:N){
+  print(i)
+  null.lmer <- refit(math.lme4, nullY[,i])
+  alt.lmer <- refit(math.lme3, nullY[,i])
+  Dsim[i] <- 2*(logLik(alt.lmer) - logLik(null.lmer))
+  
+}
+mean(Dsim>d)
+```
+
 ###(b)
+
+We get a small p-value < .05 which indicates that we need to stick with the full model, so we will stay with the model that has the Minority random slope.
+
+```{r, include=F, eval=F}
+set.seed(546378)
+math.lme5 <- lmer(Math~(sizeScaled + Type + Academic + AveSES + Gender + SES + Minority) + (1|School), data = Combined)
+
+d<- 2*(logLik(math.lme4) - logLik(math.lme5))
+N <- 100
+Dsim <- numeric(N)
+nullY <- simulate(math.lme5, nsim=N)
+nullY[1:5, 1:5]
+
+for (i in 1:N){
+  null.lmer <- refit(math.lme5, nullY[,i])
+  alt.lmer <- refit(math.lme3, nullY[,i])
+  Dsim[i] <- 2*(logLik(alt.lmer) - logLik(null.lmer))
+  
+}
+hist(Dsim)
+abline(v=d)
+mean(Dsim>d)
+```
 
 ##36
 
 ###(a)
 
+It appears that all of the fixed effects are significant if we are assuming t-values > 2.5 to be significant. 
+
+```{r, include=F}
+#summary(math.lme4)
+```
+
 ###(b)
 
+We can use an anova test for this because we are just checking fixed effects. Once we make sure to have REML=F in both of the models an anova test gives us an incredibly small p-value which indicates that we want to keep the full model, which in this case means Model 5 is preferred.
+
+```{r, include = F}
+math.lme4 <- lmer(Math~(sizeScaled + Type + Academic + AveSES + Gender + SES + Minority) + (Minority|School), data = Combined, REML=F)
+math.lme6 <- lmer(Math~(sizeScaled + Academic + AveSES  + SES + (Type*(Minority + Gender))) + (Minority|School), data = Combined, REML=F)
+anova(math.lme4, math.lme6)
+```
+
 ###(c)
+
+I was not satisfied with having both of the gender and school type and the minority and school type interactions in the model because it doesn't appear that the gender and school type interaction is significant. I took that interaction out and using the anova command I did not see a reason to keep it in the model so my final model has the interaction with Type and Minority but not Type and Gender. 
+
+```{r, include=F}
+summary(math.lme6)
+math.lme7 <- lmer(Math~(sizeScaled + Academic + AveSES  + SES + Gender + (Type*(Minority))) + (Minority|School), data = Combined, REML=F)
+anova(math.lme6,math.lme7)
+summary(math.lme7)
+```
 
 ##37
 
 ###(a)
 
+It seems like we have a fairly constant variance based on the plot below.
+
+```{r}
+library(HLMdiag)
+x2 <- HLMresid(math.lme7, level = 1, standardize = TRUE)
+plot(fitted(math.lme7), x2, ylab = "Conditional Residual")
+```
+
+
 ###(b)
+
+There doesn't appear to be any curvature or outliers in the plot against the fitted values or against the numeric variables.
+
+```{r}
+x <- HLMresid(math.lme7, level="marginal",standardize=TRUE)
+plot(x~fitted(math.lme7), ylab = "Marginal Residual")
+abline(h=0)
+```
+
+```{r}
+plot(x~sizeScaled, ylab = "Marginal Residual", data = Combined)
+abline(h=0)
+```
+
+```{r}
+plot(x~SES, ylab = "Marginal Residual", data = Combined)
+abline(h=0)
+```
 
 ###(c)
 
+Observation 357 should be inspected based on the cooks distance plot below. 
+
+```{r}
+cd <- cooks.distance(math.lme7)
+dotplot_diag(cd,cutoff="internal", name="cooks.distance")
+```
+
 ###(d)
+
+The two students who stand out the most in the leverage plot have very low Math scores, both of them ahve scores < 1 which seems very unsual. 
+
+```{r}
+lev <- leverage(math.lme7,level=1)
+dotplot_diag(lev[,1],cutoff="internal",name="leverage")
+index <- lev[,1] > .045
+Combined[index,]
+```
 
 ##38
 
 ###(a)
 
+The plot below shows that there appears to be a relationship betweentreatment and rat weight. There also appears to be a relationship between sex of the rat and the wight, and possibly a interaction between treatment and sex of the rats. 
+
+```{r}
+ratdata <- read.csv("http://math.carleton.edu/Chihara/Stats345/ratpup.csv")
+ratStats <- ratdata %>% summarize(Mean.Weight = mean(weight), Mean.LitSize = mean(litsize))
+ratStats
+```
+
+```{r}
+ggplot(ratdata, aes(y = weight, x = sex)) + geom_boxplot() + facet_grid(~treatment)
+```
+
+
 ###(b)
+
+With the unconditional means model we get an intraclass correlation of .60, meaning that we will want to use a random effects model because a lot of the variation in our data can be explained by the different litters the rats are in.
+
+```{r}
+rat.lme <- lmer(weight~1 + (1|litter), data = ratdata)
+#summary(rat.lme)
+corr <- .3004/(.3004+.1963)
+```
 
 ##39
 
 ###(a)
 
-###(a)
+Level 1: $Y_{ij} = a_i + b_i(Male)  + \epsilon_{ij}$
+
+Level 2: $a_i = \alpha_0  + \alpha_1(litsize) + \alpha_2(High) + \alpha_3(Low) + \mu_i$
+
+$b_i = \beta_0 + w_i$ 
+
+
+###(b)
+
+Model 1: random intercept and random slope
+
+Model 2: random intercept only
+
+Model1 vs Model2
+
+D = 4.21 w/df=9, P-value of .081, so I went with model 2.
+
+Model 3: no random effects
+
+Model2 vs Model3
+
+D = 90.5 df = 7, p-value = 0, sticking with model 2.
+
+
+So we are sticking with the mdoel with the random effects of no random slope just random intercept. 
+
+
+```{r, results='hide'}
+rat.lme1 <- lmer(weight~sex + litsize + treatment + (sex|litter), data = ratdata)
+rat.lme2 <- lmer(weight~sex + litsize + treatment + (1|litter), data = ratdata)
+D <- 2*(logLik(rat.lme1)-logLik(rat.lme2))
+.5*(1-pchisq(D,2))+.5*(1-pchisq(D,1))
+rat.lm <- lm(weight~sex + litsize + treatment, data = ratdata)
+D <- 2*(logLik(rat.lme2)-logLik(rat.lm, REML = TRUE))
+.5*(1-pchisq(D,2))+.5*(1-pchisq(D,1))
+rat.lme2 <- lmer(weight~sex + litsize + treatment + (1|litter), data = ratdata, REML = F)
+rat.lme3 <- lmer(weight~litsize + (sex*treatment) + (1|litter), data = ratdata, REML = F)
+anova(rat.lme2, rat.lme3)
+summary(rat.lme3)
+```
 
 ##40
 
 ###(a)
 
+
+Model 4: Interactions with Sex and Treatment
+
+Model2 vs Model4
+
+Anova test gives p-value of .615, Sticking with larger model, Model4
+
+I am happy with Model 4 and so that will be my final model, with all of the fixed effects by themselves plus an interaction between sex and treatment level.
+
+$$Y_{ij} = \alpha_0  + \alpha_1(litsize) + \alpha_2(High) + \alpha_3(Low) + \beta_0(Male) + \beta_1(MaleHigh) + \beta_2(MaleLow) + \mu_i + \epsilon_{ij}$$
+
+
 ###(b)
+
+In our Marginal residual plot we can definitely see a few outliers in our model. In the COnditional Residuals there does appear to be some fanning out, so our model may not be the best fit, we may be missing something. In both the Cooks distance and leverage there are a few major outliers so again their may be more going on with our data then our model can accurately explain right now.
+
+```{r}
+x2 <- HLMresid(rat.lme3, level = 1, standardize = TRUE)
+plot(fitted(rat.lme3), x2, ylab = "Conditional Residual")
+```
+
+```{r}
+x <- HLMresid(rat.lme3, level="marginal",standardize=TRUE)
+plot(x~fitted(rat.lme3), ylab = "Marginal Residual")
+abline(h=0)
+```
+
+
+```{r}
+cd <- cooks.distance(rat.lme3)
+dotplot_diag(cd,cutoff="internal", name="cooks.distance")
+```
+
+```{r}
+lev <- leverage(rat.lme3,level=1)
+dotplot_diag(lev[,1],cutoff="internal",name="leverage")
+```
 
 ##41
 
 ###(1)
 
+####(a)
+
+Level 1: Information about their Gang Activity and time of year
+
+Level 2: Infromation about their parents, and their ethnic and cultural heritage
+
+####(b)
+
+Level 1: Time of year, gang activity
+
+Level 2: Race, Socioeconomic status
+
 ###(2)
 
+A wide format could have the explanatory variable as a seperate variable for each time the data was gathered. So a variable for March a variable for May, the observations would be just the 300 9th graders.
+
+Long format the rows would be a specific measurement of a 9th grader at a given time. So each 9th grader would have 8 different rows where they would have some data in common and other things would change between those rows.
+
 ###(3)
+
+Lattice plots help you look at the relationship for each individual case or group that you are looking at, while spagetti plots allow you to more easily look at the overall trends across all of your data since you may be able to see a pattern having all of the spagetti lines laid on top of one another. 
